@@ -25,7 +25,7 @@ body {
   padding-bottom: calc(84px + env(safe-area-inset-bottom));
 }
 button, input, select, textarea { font: inherit; color: inherit; }
-.hidden { display: none !important; }
+.hidden, [hidden] { display: none !important; }
 
 header.top {
   position: sticky; top: 0; z-index: 10; background: var(--bg);

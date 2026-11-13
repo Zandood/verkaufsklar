@@ -83,11 +83,13 @@ const ClaudeProvider = {
   name: 'Claude (Anthropic)',
   keyPlaceholder: 'sk-ant-…',
   models: [
-    { id: 'claude-opus-5-5', name: 'Claude Opus 5.5 (beste Qualität)' },
-    { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5 (schneller, günstiger)' },
-    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5 (am günstigsten)' },
+    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5 (am günstigsten, ~$0,01 pro Anzeige)' },
+    { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5 (besser, ~$0,05)' },
+    { id: 'claude-opus-5-5', name: 'Claude Opus 5.5 (beste Qualität, ~$0,10)' },
   ],
-  defaultModel: 'claude-opus-5-5',
+  defaultModel: 'claude-haiku-5-5',
+  needsKey: true,
+  keyHelp: 'Schlüssel aus <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (nicht dein claude.ai-Login; separat in US-Dollar abgerechnet).',
 
   async call(apiKey, body, useFallback) {
     const headers = {
@@ -149,7 +151,7 @@ const ClaudeProvider = {
       messages,
     };
     if (settings.web) {
-      body.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'DE', timezone: 'Europe/Berlin' } }];
+      body.tools = [{ type: model === 'claude-haiku-5-5' ? 'web_search_20250305' : 'web_search_20260209', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'DE', timezone: 'Europe/Berlin' } }];
     }
 
     let data;
@@ -184,6 +186,146 @@ const ClaudeProvider = {
   },
 };
 
-const PROVIDERS = { claude: ClaudeProvider };
+
+/* ---------- Google Gemini (free tier available) ---------- */
+const GeminiProvider = {
+  id: 'gemini',
+  name: 'Google Gemini (kostenlose Stufe)',
+  keyPlaceholder: 'AIza…',
+  needsKey: true,
+  keyHelp: 'Kostenlosen Schlüssel holen: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Hinweis: In der kostenlosen Stufe darf Google Eingaben (auch Fotos) zur Verbesserung seiner Produkte verwenden. Tageslimits sind begrenzt.',
+  models: [
+    { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite (schnell, günstigstes)' },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (genauer)' },
+    { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite' },
+  ],
+  defaultModel: 'gemini-3.5-flash-lite',
+  canListModels: true,
+
+  async call(apiKey, model, body) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(`Gemini API ${res.status}: ${data?.error?.message || res.statusText}`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  },
+
+  async listModels({ apiKey }) {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': apiKey } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || res.statusText);
+    return (data.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/i.test(m.name) && !/embedding|tts|image-generation|live/i.test(m.name))
+      .map(m => ({ id: m.name.replace(/^models\//, ''), name: m.displayName || m.name }));
+  },
+
+  async test({ apiKey, model }) {
+    await this.call(apiKey, model, { contents: [{ role: 'user', parts: [{ text: 'Antworte nur mit: OK' }] }] });
+    return true;
+  },
+
+  async analyze({ apiKey, model, images, notes, settings, onStatus }) {
+    const parts = [];
+    images.forEach((img, i) => {
+      parts.push({ text: `Foto ${i + 1}:` });
+      parts.push({ inline_data: { mime_type: img.mediaType, data: img.base64 } });
+    });
+    parts.push({ text: buildPrompt(notes, settings) });
+    const body = { contents: [{ role: 'user', parts }], generationConfig: { maxOutputTokens: 8192 } };
+    let data;
+    if (settings.web) {
+      onStatus?.('Gemini erkennt den Artikel und prüft Preise mit Google-Suche …');
+      try {
+        data = await this.call(apiKey, model, { ...body, tools: [{ google_search: {} }] });
+      } catch (e) {
+        // Search grounding may be unavailable for this key/model or over quota: retry without it.
+        if (e.status === 400 || e.status === 403 || e.status === 429) {
+          onStatus?.('Google-Suche nicht verfügbar – Schätzung ohne Websuche …');
+          data = await this.call(apiKey, model, body);
+          data.__noSearch = true;
+        } else throw e;
+      }
+    } else {
+      onStatus?.('Gemini erkennt den Artikel …');
+      data = await this.call(apiKey, model, body);
+    }
+    const cand = (data.candidates || [])[0];
+    if (!cand) throw new Error('Gemini hat keine Antwort geliefert' + (data.promptFeedback?.blockReason ? ` (blockiert: ${data.promptFeedback.blockReason})` : '.'));
+    if (cand.finishReason === 'MAX_TOKENS') throw new Error('Die Antwort war zu lang und wurde abgeschnitten. Bitte erneut analysieren.');
+    if (cand.finishReason === 'SAFETY') throw new Error('Gemini hat die Anfrage aus Sicherheitsgründen abgelehnt. Bitte andere Fotos versuchen.');
+    const text = (cand.content?.parts || []).filter(p => typeof p.text === 'string' && !p.thought).map(p => p.text).join('');
+    const listing = normalizeListing(extractJson(text));
+    if (!listing.sources.length) {
+      const chunks = cand.groundingMetadata?.groundingChunks || [];
+      listing.sources = chunks.filter(c => c.web?.uri).slice(0, 6).map(c => ({ title: c.web.title || c.web.uri, url: c.web.uri }));
+    }
+    if (data.__noSearch) listing.reasoning = (listing.reasoning + '\n(Ohne Websuche geschätzt.)').trim();
+    listing.aiModel = model;
+    return listing;
+  },
+};
+
+/* ---------- Local LLM: Ollama / LM Studio / any OpenAI-compatible server on your PC ---------- */
+const LocalProvider = {
+  id: 'local',
+  name: 'Lokales Modell (Ollama / LM Studio am PC)',
+  keyPlaceholder: 'meist leer lassen',
+  needsKey: false,
+  needsBaseUrl: true,
+  defaultBaseUrl: 'http://192.168.178.20:11434/v1',
+  keyHelp: 'Kostenlos, Fotos bleiben in deinem WLAN. Am PC: <b>Ollama</b> installieren, ein Bild-Modell laden (z. B. <code>ollama pull qwen2.5vl:7b</code> oder <code>gemma3:12b</code>) und Ollama fürs WLAN freigeben: Umgebungsvariablen <code>OLLAMA_HOST=0.0.0.0</code> und <code>OLLAMA_ORIGINS=*</code>, dann neu starten. Adresse: <code>http://&lt;IP-des-PCs&gt;:11434/v1</code> (LM Studio: Port 1234). Keine Websuche: Preise sind nur Schätzungen. Funktioniert in der Android-App und am PC unter localhost; die Web-Version (https) darf keine http-Adressen im WLAN aufrufen.',
+  models: [
+    { id: 'qwen2.5vl:7b', name: 'qwen2.5vl:7b (empfohlen)' },
+    { id: 'gemma3:12b', name: 'gemma3:12b' },
+    { id: 'llama3.2-vision:11b', name: 'llama3.2-vision:11b' },
+  ],
+  defaultModel: 'qwen2.5vl:7b',
+  canListModels: true,
+
+  base(baseUrl) { return (baseUrl || this.defaultBaseUrl).replace(/\/+$/, ''); },
+  async call({ apiKey, baseUrl }, body) {
+    const headers = { 'content-type': 'application/json' };
+    if (apiKey) headers.authorization = 'Bearer ' + apiKey;
+    let res;
+    try {
+      res = await fetch(this.base(baseUrl) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
+    } catch (e) {
+      throw new Error(`Lokaler Server nicht erreichbar (${this.base(baseUrl)}). Läuft Ollama/LM Studio, ist der PC im selben WLAN und OLLAMA_HOST/OLLAMA_ORIGINS gesetzt?`);
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`Lokales Modell ${res.status}: ${data?.error?.message || data?.error || res.statusText}`);
+    return data;
+  },
+  async listModels({ apiKey, baseUrl }) {
+    const headers = apiKey ? { authorization: 'Bearer ' + apiKey } : {};
+    const res = await fetch(this.base(baseUrl) + '/models', { headers });
+    const data = await res.json();
+    return (data.data || []).map(m => ({ id: m.id, name: m.id }));
+  },
+  async test(opts) {
+    await this.call(opts, { model: opts.model, max_tokens: 16, messages: [{ role: 'user', content: 'Antworte nur mit: OK' }] });
+    return true;
+  },
+  async analyze({ apiKey, baseUrl, model, images, notes, settings, onStatus }) {
+    onStatus?.('Lokales Modell erkennt den Artikel (kann am PC 1–3 Minuten dauern) …');
+    const content = [];
+    images.slice(0, 4).forEach(img => content.push({ type: 'image_url', image_url: { url: `data:${img.mediaType};base64,${img.base64}` } }));
+    content.push({ type: 'text', text: buildPrompt(notes, { ...settings, web: false }) });
+    const data = await this.call({ apiKey, baseUrl }, { model, max_tokens: 4096, temperature: 0.2, messages: [{ role: 'user', content }] });
+    const text = data.choices?.[0]?.message?.content || '';
+    const listing = normalizeListing(extractJson(Array.isArray(text) ? text.map(t => t.text || '').join('') : text));
+    listing.reasoning = (listing.reasoning + '\n(Lokales Modell ohne Websuche – Preis bitte mit eBay „Verkaufte Angebote“ prüfen.)').trim();
+    listing.confidence = listing.confidence || 'niedrig';
+    listing.aiModel = model;
+    return listing;
+  },
+};
+
+// Order shown in settings: Gemini first (free), Claude (Haiku default), local model last.
+const PROVIDERS = { gemini: GeminiProvider, claude: ClaudeProvider, local: LocalProvider };
 window.PROVIDERS = PROVIDERS;
 window.__test = { extractJson, normalizeListing, buildPrompt };

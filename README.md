@@ -1,13 +1,13 @@
 # Verkaufsklar – Foto → Kleinanzeigen-Inserat mit Claude
 
-Take photos of an item on your phone. Claude identifies it, checks prices on the web and writes the title, description, category, condition, new price and a suggested price (with sources). You edit the photos (crop, rotate, brightness, contrast, saturation, warmth, auto-fix), then hand everything over to Kleinanzeigen.
+Take photos of an item on your phone. An AI (Google Gemini, Claude or a local model) identifies it, checks prices on the web and writes the title, description, category, condition, new price and a suggested price (with sources). You edit the photos (crop, rotate, brightness, contrast, saturation, warmth, auto-fix), then hand everything over to Kleinanzeigen.
 
 It's an installable web app (PWA): one codebase for Android (Chrome) and PC (Chrome/Edge). There's no server and no build step. Your API key and drafts stay on your device.
 
 ## What it does
 - **Photos:** take photos with the camera or pick them from the gallery, up to 20 per listing. The first photo is the cover, and ★ makes another photo the cover. On Android you can also share photos from the gallery into the installed app.
 - **Photo editor:** crop (free, 1:1, 4:3, 3:4 or 16:9), rotate, brightness, contrast, saturation, warmth and Auto. Edits are non-destructive, so re-editing starts from the original.
-- **Claude analysis:** Opus 5.5 by default (Sonnet 5.5 and Haiku 5.5 are selectable). It uses live web search (at most 5 searches) to find the new price and used prices, and returns:
+- **AI analysis** (Gemini, Claude or a local model). It uses web search where available (at most 5 searches with Claude) to find the new price and used prices, and returns:
   - the new price, a suggested price, a low–high range and a confidence level
   - its reasoning and source links
   - a "check sold listings on eBay" link
@@ -23,14 +23,25 @@ It's an installable web app (PWA): one codebase for Android (Chrome) and PC (Chr
 ## Why it doesn't post automatically
 Kleinanzeigen has no public API for creating listings. Its terms of use (§ 5 Nr. 1) forbid "Crawler, Spider, Scraper oder andere automatisierte Mechanismen" without written permission, and accounts can be banned. So the app prepares everything and you press "Anzeige aufgeben" yourself. The bookmarklet only fills the fields in your own browser after you click it.
 
+## Choosing an AI (Einstellungen → Anbieter)
+Order, cheapest first:
+1. **Google Gemini (default, free tier).**
+   - Get a free key at https://aistudio.google.com/apikey.
+   - Prices are checked with Google Search.
+   - On the free tier Google may use your inputs, including photos, to improve its products, and daily limits apply. If Google Search isn't available, the app falls back to an estimate without web search.
+   - "Modelle laden" fetches the current model list.
+2. **Claude.** Haiku 5.5 is the default (about $0.01 per listing); Sonnet and Opus are selectable.
+   - It needs an API key from console.anthropic.com. This is not your claude.ai login and is billed separately.
+3. **Local model on your PC (free, photos stay on your network):**
+   - Install Ollama and run `ollama pull qwen2.5vl:7b` (or `gemma3:12b`).
+   - Set the environment variables `OLLAMA_HOST=0.0.0.0` and `OLLAMA_ORIGINS=*`, then restart Ollama.
+   - In the app, enter `http://<PC-IP>:11434/v1` as the server address. For LM Studio the port is 1234.
+   - There is no web search, so prices are estimates only.
+   - It works in the Android app, and in a browser on the PC itself via `http://localhost:11434/v1`. The https web version on GitHub Pages cannot reach an http address on your network.
+
 ## Setup
-1. **API key:** go to https://console.anthropic.com/settings/keys, create a key and add some credit. This is separate from a claude.ai Pro/Max subscription, which third-party apps can't use. Cost is roughly $0.02–0.15 per listing.
-2. **Host the folder over HTTPS.** The camera, install and service worker need HTTPS. Pick one:
-   - **GitHub Pages:** push this folder to a repo, then go to Settings → Pages → Deploy from branch `main` / root. The URL will be `https://<user>.github.io/<repo>/`.
-   - **Netlify Drop:** drag the folder onto https://app.netlify.com/drop and you get an HTTPS URL immediately.
-   - **Local PC only:** run `python3 -m http.server 8080` in this folder and open http://localhost:8080. Localhost counts as secure.
-3. Open the URL on your phone in Chrome, then go to ⋮ → "App installieren" / "Zum Startbildschirm hinzufügen".
-4. In the app, open Einstellungen, paste the key, tap "Verbindung testen" and then Speichern.
+1. Install the Android app from the latest release: https://github.com/Zandood/verkaufsklar/releases/latest. Alternatively, open the web version at https://zandood.github.io/verkaufsklar/ and install it with ⋮ → "App installieren".
+2. In Einstellungen, pick a provider, paste the key, tap "Verbindung testen", then "Speichern".
 
 ## Adding another AI provider
 `providers.js` has a `PROVIDERS` registry. To add a provider (OpenAI, Gemini, …), add an object with `id`, `name`, `models`, `defaultModel`, `keyPlaceholder`, `test()` and `analyze()` that returns the same listing shape as `ClaudeProvider`. The settings screen picks it up automatically, and each provider's key is stored separately.

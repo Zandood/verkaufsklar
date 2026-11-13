@@ -24,8 +24,8 @@
   <!-- CAPTURE / LISTING -->
   <section class="view active" id="view-listing">
     <div class="card" id="setupHint" hidden>
-      <h2>Zuerst Claude verbinden</h2>
-      <p class="muted">Trage in den Einstellungen deinen Anthropic-API-Schlüssel ein. Er bleibt nur auf diesem Gerät.</p>
+      <h2>Zuerst KI verbinden</h2>
+      <p class="muted">Wähle in den Einstellungen einen Anbieter: Google Gemini (kostenloser Schlüssel), Claude oder ein lokales Modell am PC.</p>
       <button class="btn primary" data-goto="settings">Zu den Einstellungen</button>
     </div>
 
@@ -48,15 +48,15 @@
     </div>
 
     <div class="card">
-      <h2>2. Infos für Claude <span class="muted">(optional)</span></h2>
+      <h2>2. Infos für die KI <span class="muted">(optional)</span></h2>
       <label class="field"><span>Was weißt du über den Artikel? (Marke, Alter, Mängel, Zubehör …)</span>
         <input type="text" id="userNotes" placeholder="z. B. 2 Jahre alt, kleiner Kratzer, OVP vorhanden">
       </label>
       <button class="btn primary big" id="btnAnalyze" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5l-1.8-4.7L5.5 9l4.7-1.3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>
-        Mit Claude analysieren
+        Mit KI analysieren
       </button>
-      <div class="status hidden" id="analyzeStatus"><div class="spinner"></div><span id="analyzeStatusText">Claude schaut sich die Fotos an …</span></div>
+      <div class="status hidden" id="analyzeStatus"><div class="spinner"></div><span id="analyzeStatusText">Die KI schaut sich die Fotos an …</span></div>
       <div class="error hidden" id="analyzeError"></div>
     </div>
 
@@ -139,13 +139,21 @@
       <label class="field"><span>Anbieter</span>
         <select id="sProvider"></select>
       </label>
-      <label class="field"><span>API-Schlüssel</span>
-        <input type="password" id="sKey" autocomplete="off" placeholder="sk-ant-…">
+      <p class="muted" id="sProviderHint">Reihenfolge: Gemini (kostenlos) → Claude Haiku (sehr günstig) → lokales Modell am PC (kostenlos, ohne Websuche).</p>
+      <label class="field" id="sBaseUrlWrap" hidden><span>Server-Adresse</span>
+        <input type="text" id="sBaseUrl" inputmode="url" autocomplete="off" placeholder="http://192.168.178.20:11434/v1">
       </label>
-      <p class="muted">Schlüssel erstellen: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com → API Keys</a>. Wichtig: Das ist ein API-Schlüssel aus der Anthropic Console, nicht dein claude.ai-Login. Die API wird separat von einem Claude Pro/Max-Abo abgerechnet (in US-Dollar, ca. $0,02–0,15 pro Anzeige, Websuche max. 5 Abfragen). Der Schlüssel wird nur lokal in diesem Browser gespeichert. Deine Fotos werden zur Analyse an die Anthropic-API gesendet.</p>
-      <label class="field"><span>Modell</span>
+      <label class="field"><span id="sKeyLabel">API-Schlüssel</span>
+        <input type="password" id="sKey" autocomplete="off">
+      </label>
+      <p class="muted" id="sKeyHelp"></p>
+      <label class="field"><span>Modell <button class="copy-btn" id="btnLoadModels" type="button">Modelle laden</button></span>
         <select id="sModel"></select>
       </label>
+      <label class="field" id="sModelCustomWrap"><span>…oder Modellname eingeben</span>
+        <input type="text" id="sModelCustom" autocomplete="off" placeholder="leer = Auswahl oben">
+      </label>
+      <p class="muted">Schlüssel bleiben nur auf diesem Gerät. Deine Fotos werden zur Analyse an den gewählten Anbieter gesendet (beim lokalen Modell nur an deinen PC).</p>
       <label class="field"><span><span><input type="checkbox" id="sWeb" checked> Preise live im Web prüfen (empfohlen)</span></span></label>
       <div class="row"><button class="btn primary" id="btnSaveSettings">Speichern</button><button class="btn" id="btnTestKey">Verbindung testen</button></div>
       <div class="status hidden" id="testStatus"></div>
@@ -173,7 +181,7 @@
       <ol>
         <li>Fotos aufnehmen oder aus der Galerie wählen (bis zu 20).</li>
         <li>Optional: Fotos zuschneiden, drehen, aufhellen.</li>
-        <li>„Mit Claude analysieren“: Titel, Beschreibung, Kategorie, Zustand, Neupreis und Preisvorschlag kommen zurück.</li>
+        <li>„Mit KI analysieren“: Titel, Beschreibung, Kategorie, Zustand, Neupreis und Preisvorschlag kommen zurück.</li>
         <li>Alles prüfen und anpassen.</li>
         <li>Teilen an die Kleinanzeigen-App (Android) oder PC-Ausfüllhilfe nutzen und selbst veröffentlichen.</li>
       </ol>

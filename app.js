@@ -7,7 +7,7 @@
 
   // ---------- settings ----------
   const SETTINGS_KEY = 'verkaufsklar.settings.v1';
-  const defaults = { provider: 'claude', keys: {}, model: 'claude-opus-5-5', web: true, location: '', lang: 'de', footer: 'Privatverkauf. Der Verkauf erfolgt unter Ausschluss jeglicher Sachmängelhaftung. Die Haftung für Schäden aus der Verletzung des Lebens, des Körpers oder der Gesundheit sowie bei Vorsatz und grober Fahrlässigkeit bleibt unberührt.', maxPx: 2000 };
+  const defaults = { provider: 'gemini', keys: {}, models: {}, baseUrls: {}, model: '', web: true, location: '', lang: 'de', footer: 'Privatverkauf. Der Verkauf erfolgt unter Ausschluss jeglicher Sachmängelhaftung. Die Haftung für Schäden aus der Verletzung des Lebens, des Körpers oder der Gesundheit sowie bei Vorsatz und grober Fahrlässigkeit bleibt unberührt.', maxPx: 2000 };
   let settings = load();
   function load() {
     try { return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (_) { return { ...defaults }; }
@@ -19,6 +19,11 @@
   window.APP_SETTINGS = settings;
   const provider = () => window.PROVIDERS[settings.provider] || window.PROVIDERS.claude;
   const apiKey = () => (settings.keys || {})[settings.provider] || '';
+  const modelFor = (pid) => (settings.models || {})[pid] || (window.PROVIDERS[pid] ? window.PROVIDERS[pid].defaultModel : '');
+  const baseUrl = () => (settings.baseUrls || {})[settings.provider] || '';
+  const isReady = () => { const p = provider(); return p.needsKey ? !!apiKey() : (!p.needsBaseUrl || !!baseUrl()); };
+  // migrate v1 settings (Claude-only) to per-provider model storage
+  if (settings.model && settings.model.startsWith('claude') && !(settings.models || {}).claude) settings.models = { ...(settings.models || {}), claude: settings.model };
 
   // ---------- IndexedDB drafts ----------
   const DB = {
@@ -178,7 +183,7 @@
   }
 
   async function analyze() {
-    if (!apiKey()) { toast('Bitte zuerst den API-Schlüssel eintragen'); go('settings'); return; }
+    if (!isReady()) { toast(provider().needsKey ? 'Bitte zuerst den API-Schlüssel eintragen' : 'Bitte zuerst die Server-Adresse eintragen'); go('settings'); return; }
     if (!draft.photos.length) return;
     const btn = $('btnAnalyze');
     btn.disabled = true; $('btnReanalyze').disabled = true;
@@ -197,7 +202,7 @@
       const cur = readForm();
       if (cur && (cur.brand || cur.model)) notes = `Vom Verkäufer bestätigt: Marke ${cur.brand || '?'}, Modell ${cur.model || '?'}, Zustand ${cur.condition}. ` + notes;
       const listing = await provider().analyze({
-        apiKey: apiKey(), model: settings.model, images, notes,
+        apiKey: apiKey(), baseUrl: baseUrl(), model: modelFor(settings.provider), images, notes,
         settings: { web: settings.web, location: settings.location, lang: settings.lang, footer: settings.footer },
         onStatus: (s) => { $('analyzeStatusText').textContent = s; },
       });
@@ -459,27 +464,53 @@
   function fillSettings() {
     const ps = $('sProvider'); ps.innerHTML = '';
     Object.values(window.PROVIDERS).forEach(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; ps.appendChild(o); });
-    ps.value = settings.provider;
-    fillModels();
-    $('sKey').value = apiKey();
-    $('sKey').placeholder = provider().keyPlaceholder;
+    ps.value = window.PROVIDERS[settings.provider] ? settings.provider : 'gemini';
+    fillProviderFields();
     $('sWeb').checked = settings.web;
     $('sLocation').value = settings.location;
     $('sLang').value = settings.lang;
     $('sFooter').value = settings.footer;
     $('sMaxPx').value = String(settings.maxPx);
   }
-  function fillModels() {
+  let extraModels = {};
+  function fillProviderFields() {
+    const pid = $('sProvider').value;
+    const p = window.PROVIDERS[pid];
+    $('sKey').value = (settings.keys || {})[pid] || '';
+    $('sKey').placeholder = p.keyPlaceholder || '';
+    $('sKeyLabel').textContent = p.needsKey ? 'API-Schlüssel' : 'API-Schlüssel (optional)';
+    $('sKeyHelp').innerHTML = p.keyHelp || '';   // static, trusted text from providers.js
+    $('sBaseUrlWrap').hidden = !p.needsBaseUrl;
+    $('sBaseUrl').value = (settings.baseUrls || {})[pid] || '';
+    $('sBaseUrl').placeholder = p.defaultBaseUrl || '';
+    $('btnLoadModels').hidden = !p.canListModels;
     const ms = $('sModel'); ms.innerHTML = '';
-    const p = window.PROVIDERS[$('sProvider').value] || provider();
-    p.models.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; ms.appendChild(o); });
-    ms.value = p.models.some(m => m.id === settings.model) ? settings.model : p.defaultModel;
+    const list = [...p.models];
+    (extraModels[pid] || []).forEach(m => { if (!list.some(x => x.id === m.id)) list.push(m); });
+    list.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; ms.appendChild(o); });
+    const cur = modelFor(pid);
+    if (list.some(m => m.id === cur)) { ms.value = cur; $('sModelCustom').value = ''; }
+    else { ms.value = p.defaultModel; $('sModelCustom').value = cur && cur !== p.defaultModel ? cur : ''; }
   }
-  $('sProvider').onchange = () => { fillModels(); $('sKey').value = (settings.keys || {})[$('sProvider').value] || ''; };
+  $('sProvider').onchange = fillProviderFields;
+  $('btnLoadModels').onclick = async () => {
+    const pid = $('sProvider').value; const p = window.PROVIDERS[pid];
+    const st = $('testStatus'); st.classList.remove('hidden'); st.textContent = 'Lade Modelle …';
+    try {
+      const ms = await p.listModels({ apiKey: $('sKey').value.trim(), baseUrl: $('sBaseUrl').value.trim() || p.defaultBaseUrl });
+      extraModels[pid] = ms;
+      const keep = $('sModelCustom').value.trim() || $('sModel').value;
+      fillProviderFields();
+      if ([...$('sModel').options].some(o => o.value === keep)) $('sModel').value = keep;
+      st.textContent = `✓ ${ms.length} Modelle gefunden.`;
+    } catch (e) { st.textContent = '✗ Modelle konnten nicht geladen werden: ' + e.message; }
+  };
   function readSettings() {
-    settings.provider = $('sProvider').value || 'claude';
-    settings.keys = { ...(settings.keys || {}), [settings.provider]: $('sKey').value.trim() };
-    settings.model = $('sModel').value;
+    const pid = $('sProvider').value || 'gemini';
+    settings.provider = pid;
+    settings.keys = { ...(settings.keys || {}), [pid]: $('sKey').value.trim() };
+    settings.models = { ...(settings.models || {}), [pid]: $('sModelCustom').value.trim() || $('sModel').value };
+    settings.baseUrls = { ...(settings.baseUrls || {}), [pid]: $('sBaseUrl').value.trim() };
     settings.web = $('sWeb').checked;
     settings.location = $('sLocation').value.trim();
     settings.lang = $('sLang').value;
@@ -494,10 +525,10 @@
     readSettings();
     const st = $('testStatus');
     st.classList.remove('hidden'); st.textContent = 'Teste Verbindung …';
-    try { await provider().test({ apiKey: apiKey(), model: settings.model }); st.textContent = '✓ Verbindung zu ' + provider().name + ' funktioniert.'; }
+    try { await provider().test({ apiKey: apiKey(), baseUrl: baseUrl(), model: modelFor(settings.provider) }); st.textContent = '✓ Verbindung zu ' + provider().name + ' funktioniert.'; }
     catch (e) { st.textContent = '✗ ' + e.message; }
   };
-  function updateSetupHint() { $('setupHint').hidden = !!apiKey(); }
+  function updateSetupHint() { $('setupHint').hidden = isReady(); }
 
   // ---------- boot ----------
   window.addEventListener('pagehide', persistNow);
