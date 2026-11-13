@@ -1,0 +1,23 @@
+{
+  "name": "Verkaufsklar – Foto zu Kleinanzeige",
+  "short_name": "Verkaufsklar",
+  "description": "Foto aufnehmen, Claude schreibt Titel, Beschreibung und Preisvorschlag für Kleinanzeigen.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FBF8FF",
+  "theme_color": "#3B4CCA",
+  "lang": "de",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": { "files": [{ "name": "photos", "accept": ["image/*"] }] }
+  }
+}
