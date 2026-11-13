@@ -332,7 +332,9 @@
       const files = await exportFiles();
       const text = l ? fullText(l) : '';
       if (text) await copy(text, 'Anzeigentext');
-      if (navigator.canShare && navigator.canShare({ files })) {
+      if (await nativeShare(files, text, l?.title)) {
+        /* shared via native app */
+      } else if (navigator.canShare && navigator.canShare({ files })) {
         await navigator.share({ files, title: l?.title || 'Anzeige', text });
       } else {
         toast('Teilen wird hier nicht unterstützt – Fotos werden gespeichert');
@@ -343,7 +345,23 @@
     } finally { btn.disabled = false; }
   };
 
+  // Native Android app (Capacitor): use Share + Filesystem plugins, since WebView has no Web Share / downloads.
+  const CapP = () => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ? window.Capacitor.Plugins : null;
+  async function nativeShare(files, text, title) {
+    const P = CapP();
+    if (!P || !P.Filesystem || !P.Share) return false;
+    const uris = [];
+    for (const f of files) {
+      const data = await blobToBase64(f);
+      const r = await P.Filesystem.writeFile({ path: f.name, data, directory: 'CACHE' });
+      uris.push(r.uri);
+    }
+    await P.Share.share({ title: title || 'Anzeige', text: text || undefined, files: uris, dialogTitle: 'Teilen mit …' });
+    return true;
+  }
+
   async function downloadFiles(files) {
+    if (await nativeShare(files, '', 'Fotos speichern')) return;
     for (const f of files) {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(f); a.download = f.name;
