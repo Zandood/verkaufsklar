@@ -13,6 +13,7 @@
   --outline:#767680; --outline-variant:#C7C5D0;
   --inverse-surface:#303036; --inverse-on-surface:#F2EFF7; --inverse-primary:#BDC2FF;
   --scrim:#000000; --camera-chrome:#0B0B10; --on-camera-chrome:#FFFFFF;
+  --camera-accent:#BDC2FF; --on-camera-accent:#1A2478; /* fixed in both themes: camera + photo-editor chrome is always dark; never use --inverse-primary there (flips to #3B4CCA in dark = 2.9:1) */
 
   /* Typography */
   --font-brand:"Plus Jakarta Sans", Roboto, system-ui, sans-serif;

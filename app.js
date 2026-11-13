@@ -205,7 +205,7 @@
       fillResult(listing);
       await persistNow();
       toast(`Fertig in ${Math.round((Date.now() - started) / 1000)} s`);
-      $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('result').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     } catch (e) {
       console.error(e);
       let msg = e.message || String(e);
@@ -275,6 +275,12 @@
   function updateTitleLen() {
     const tl = $('fTitle').value.length;
     $('titleLen').textContent = tl < 10 ? `${tl}/65 – mind. 10` : `${tl}/65`;
+    $('titleLen').className = (tl < 10 || tl > 65) ? 'warn' : '';
+    const dl = $('fDesc').value.length;
+    $('descLen').className = dl >= 3800 ? 'warn' : '';
+    const free = $('fPriceType').value === 'Zu verschenken';
+    $('fPrice').disabled = free;
+    if (free) $('fPrice').value = 0;
     $('descLen').textContent = `${$('fDesc').value.length}/4000`;
     const q = [$('fBrand').value, $('fModel').value].filter(Boolean).join(' ') || $('fTitle').value;
     $('btnSold').href = 'https://www.ebay.de/sch/i.html?LH_Sold=1&LH_Complete=1&_nkw=' + encodeURIComponent(q);
