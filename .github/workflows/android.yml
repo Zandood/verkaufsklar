@@ -1,0 +1,48 @@
+name: Android APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+      - name: Prepare web assets
+        run: |
+          mkdir -p cap/www
+          cp index.html app.js editor.js providers.js styles.css tokens.css icon.svg icon-192.png icon-512.png manifest.webmanifest cap/www/
+          # service worker is not needed inside the native app
+          sed -i "s#navigator.serviceWorker.register('sw.js')#Promise.resolve()#" cap/www/app.js
+      - name: Create Capacitor Android project
+        working-directory: cap
+        run: |
+          npm init -y >/dev/null
+          npm i @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npx cap init Verkaufsklar de.zandood.verkaufsklar --web-dir www
+          npx cap add android
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />#' android/app/src/main/AndroidManifest.xml
+          # app icon
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            for f in ic_launcher ic_launcher_round ic_launcher_foreground; do
+              [ -f android/app/src/main/res/mipmap-$d/$f.png ] && cp www/icon-192.png android/app/src/main/res/mipmap-$d/$f.png || true
+            done
+          done
+          npx cap sync android
+      - name: Build APK
+        working-directory: cap/android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp cap/android/app/build/outputs/apk/debug/app-debug.apk Verkaufsklar.apk
+          TAG=v1.0.${{ github.run_number }}
+          gh release create "$TAG" Verkaufsklar.apk --title "Verkaufsklar $TAG" --notes "Android APK. Download on your phone, open it, allow 'install unknown apps' for your browser, install."
